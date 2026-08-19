@@ -18,11 +18,15 @@ export EXTRA_ARGS="--num-inference-steps 30 --guidance-scale 4.0"
 bash run_npu_8card.sh
 ```
 
+这和官方 LTX-2.3 NPU 示例是同一套并行/加载参数：8 卡用 `Ulysses=4` + `TP=2`，
+并默认打开 `--enable-cpu-offload`、`--vae-use-tiling`。
+Ascend 上 LTX vocoder 的 `kaiser_window` 没有 NPU 核，必须先在 CPU 上构建，
+这不是评测规格，而是 LTX 在 NPU 上能加载的必要条件。
+
 当前环境中的 LTX-2/LTX-2.3 使用注册类名 `LTX2Pipeline`，LTX-2.3 的具体组件
 版本会根据模型目录元数据自动选择。
 
-`ASCEND_RT_VISIBLE_DEVICES` 默认使用 `0,1,2,3,4,5,6,7`，可以按实际设备分配覆盖。
-`TENSOR_PARALLEL_SIZE` 默认是 `8`。例如从第 400 行继续：
+`ASCEND_RT_VISIBLE_DEVICES` 默认使用 `0,1,2,3,4,5,6,7`。例如从第 400 行继续：
 
 ```bash
 export EXTRA_ARGS="--start 400 --num-inference-steps 30"
