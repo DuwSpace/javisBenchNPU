@@ -11,6 +11,7 @@ import argparse
 import csv
 import os
 import tempfile
+import json
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,11 @@ from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 def args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
+    p.add_argument(
+        "--javisbench-official",
+        action="store_true",
+        help="Use JavisBench official 240p/9:16/4s/24fps settings, rounded to LTX-compatible dimensions/frames.",
+    )
     p.add_argument("--input-file", required=True, help="JavisBench CSV containing a text column")
     p.add_argument("--output-dir", required=True)
     p.add_argument("--model", required=True)
@@ -33,10 +39,14 @@ def args() -> argparse.Namespace:
     p.add_argument("--width", type=int, default=768)
     p.add_argument("--num-frames", type=int, default=121)
     p.add_argument("--fps", type=int, default=24)
+    p.add_argument("--frame-rate", type=float, default=None)
+    p.add_argument("--audio-sample-rate", type=int, default=48000)
     p.add_argument("--num-inference-steps", type=int, default=30)
     p.add_argument("--guidance-scale", type=float, default=5.0)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--negative-prompt", default="")
+    p.add_argument("--extra-body", default="{}", help="JSON object of model-specific sampling parameters")
+    p.add_argument("--enable-cpu-offload", action="store_true")
     p.add_argument("--tensor-parallel-size", type=int, default=8)
     p.add_argument("--ulysses-degree", type=int, default=1)
     p.add_argument("--ring-degree", type=int, default=1)
@@ -121,6 +131,14 @@ def unwrap(result):
 
 def main() -> None:
     a = args()
+    if a.javisbench_official:
+        # JavisBench's native bucket is 240x426 and 102 frames. LTX-2 requires
+        # spatial multiples of 32 and (frames - 1) divisible by 8, so use the
+        # nearest valid bucket while preserving the official aspect/duration.
+        a.height, a.width = 256, 448
+        a.num_frames, a.fps = 97, 24
+        a.frame_rate = 24.0
+        a.audio_sample_rate = 16000
     out = Path(a.output_dir)
     with open(a.input_file, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
@@ -133,6 +151,7 @@ def main() -> None:
         model_class_name=a.model_class_name,
         enforce_eager=a.enforce_eager,
         vae_use_tiling=a.vae_use_tiling,
+        enable_cpu_offload=a.enable_cpu_offload,
         parallel_config=DiffusionParallelConfig(
             tensor_parallel_size=a.tensor_parallel_size,
             ulysses_degree=a.ulysses_degree,
@@ -158,7 +177,9 @@ def main() -> None:
             height=a.height, width=a.width, num_frames=a.num_frames,
             num_inference_steps=a.num_inference_steps,
             guidance_scale=a.guidance_scale,
+            frame_rate=float(a.frame_rate or a.fps),
             generator=torch.Generator(device="npu").manual_seed(a.seed + sample_id),
+            extra_args=json.loads(a.extra_body),
         )
         result = omni.generate({"prompt": prompt, "negative_prompt": a.negative_prompt}, params)
         frames, audio, audio_sample_rate = unwrap(result)

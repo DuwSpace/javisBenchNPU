@@ -15,4 +15,5 @@ ARGS=(
 )
 if [[ -n "${LIMIT:-}" ]]; then ARGS+=(--limit "${LIMIT}"); fi
 if [[ -n "${EXTRA_ARGS:-}" ]]; then read -r -a EXTRA <<< "${EXTRA_ARGS}"; ARGS+=("${EXTRA[@]}"); fi
+if [[ "${JAVISBENCH_OFFICIAL:-0}" == "1" ]]; then ARGS+=(--javisbench-official); fi
 python3 "${SCRIPT_DIR}/generate_javisbench.py" "${ARGS[@]}"
