@@ -1,51 +1,71 @@
-# JavisBench NPU generation
+# JavisBench NPU 生成
 
-This repository provides offline generation for JavisBench with vLLM-Omni on
-Ascend NPU. The model is loaded once; generation is sequential and completed
-MP4 files are atomically renamed into place. Re-running the command after an
-interruption skips existing non-empty files and continues from the remaining
-rows.
+本仓库使用 vLLM-Omni 在 Ascend NPU 上离线生成 JavisBench 的音视频结果。
+模型只加载一次，生成结果按 CSV 顺序处理。每个 MP4 采用原子重命名写入，
+任务中断后重新运行会自动跳过已有的非空文件，从未完成的位置继续。
 
-## Run on eight NPUs
+## 八卡运行
 
-Install a vLLM-Omni NPU environment first, then set the model and CSV paths:
+请先准备好 vLLM-Omni NPU 环境，然后设置模型、CSV 和输出目录：
 
 ```bash
 export MODEL=/models/your-video-model
-export INPUT_FILE=/data/eval/JavisBench/JavisBench.csv
-export OUTPUT_DIR=/data/samples/JavisBench
-export LIMIT=1000                 # optional; omit to process all rows
-export JAVISBENCH_OFFICIAL=1      # 240x426, 102 frames, 24 FPS, 4 seconds
+export INPUT_FILE=/workspace/data/eval/JavisBench/JavisBench.csv
+export OUTPUT_DIR=/workspace/runtime/javisbench_ltx23
+export LIMIT=1000                 # 可选；不设置时处理全部数据
+export JAVISBENCH_OFFICIAL=1      # 使用 JavisBench 官方规格预设
 export EXTRA_ARGS="--num-inference-steps 30 --guidance-scale 4.0"
 bash run_npu_8card.sh
 ```
 
-For the LTX-2/LTX-2.3 checkpoint in the NPU environment, the registered class
-name is `LTX2Pipeline`; LTX-2.3 is selected from checkpoint metadata.
+当前环境中的 LTX-2/LTX-2.3 使用注册类名 `LTX2Pipeline`，LTX-2.3 的具体组件
+版本会根据模型目录元数据自动选择。
 
-`ASCEND_RT_VISIBLE_DEVICES` defaults to `0,1,2,3,4,5,6,7`. Override it when
-using a different eight-device allocation. `TENSOR_PARALLEL_SIZE` defaults to
-8. To resume a selected range, set `EXTRA_ARGS="--start 400"`; existing
-`sample_XXXX.mp4` files are always skipped regardless of the range.
+`ASCEND_RT_VISIBLE_DEVICES` 默认使用 `0,1,2,3,4,5,6,7`，可以按实际设备分配覆盖。
+`TENSOR_PARALLEL_SIZE` 默认是 `8`。例如从第 400 行继续：
 
-The official preset follows JavisBench's `sample_240p4s.py` convention:
-`240p`, `9:16`, about 4 seconds, and `24 FPS`. LTX-2 requires dimensions and
-temporal length aligned to its VAE, so the preset uses the nearest valid
-`256x448`, `97` frames, and `16 kHz` audio. Outputs follow the evaluator convention:
+```bash
+export EXTRA_ARGS="--start 400 --num-inference-steps 30"
+bash run_npu_8card.sh
+```
+
+## JavisBench 输出规格
+
+`JAVISBENCH_OFFICIAL=1` 使用 JavisBench 官方 `240p/9:16/约 4 秒/24 FPS` 约定。
+由于 LTX-2 的 VAE 要求空间和时间维度对齐，实际采用最近的合法规格：
+
+```text
+分辨率：256x448
+帧数：97
+帧率：24 FPS
+音频采样率：16 kHz
+```
+
+输出文件符合 JavisBench 评估器的命名约定：
 
 ```text
 OUTPUT_DIR/sample_0000.mp4
 OUTPUT_DIR/sample_0001.mp4
 ```
 
-The script uses the CSV `text` column (falling back to `prompt` or `caption`).
-When the checkpoint returns audio through vLLM-Omni's multimodal output, it is
-automatically muxed into the MP4 file.
+## 多 Prompt 批量生成
 
-To submit several Prompts in one offline generation call, use `--batch-size`.
-For example, `--batch-size 4` submits four prompts together and writes four
-corresponding MP4 files. The batch size trades throughput for NPU memory.
+使用 `--batch-size` 可以一次提交多个 Prompt，并分别生成对应的视频。例如：
 
-To combine several CSV prompt fields into one video result, use
-`--prompt-columns video_text,audio_text`. This still produces one MP4 per CSV
-row; the fields are joined into one text condition.
+```bash
+export EXTRA_ARGS="--batch-size 4 --num-inference-steps 30"
+bash run_npu_8card.sh
+```
+
+这会一次提交 4 个 Prompt，并分别写入 4 个 MP4。批大小越大，吞吐量通常越高，
+但 NPU 内存占用也越大；建议从 `2` 或 `4` 开始测试。
+
+默认使用 CSV 的 `text` 列作为 Prompt。如果需要把多个 CSV 字段合并成每个样本的
+一个 Prompt，可以使用：
+
+```bash
+export EXTRA_ARGS="--prompt-columns video_text,audio_text"
+bash run_npu_8card.sh
+```
+
+当模型返回音频时，脚本会自动将音频封装到对应的 MP4 中。

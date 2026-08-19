@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline JavisBench generation with vLLM-Omni.
+"""使用 vLLM-Omni 离线生成 JavisBench 音视频结果。
 
 The model is initialized once and requests are processed in CSV order. A
 completed sample is committed with an atomic rename, so rerunning this
