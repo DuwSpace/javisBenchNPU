@@ -57,7 +57,6 @@ def args() -> argparse.Namespace:
     p.add_argument("--guidance-scale", type=float, default=5.0)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--negative-prompt", default="")
-    p.add_argument("--prompt-columns", default="text", help="合并成一条 Prompt 的 CSV 列")
     p.add_argument("--extra-body", default="{}", help="模型额外采样参数 JSON")
     p.add_argument("--enable-cpu-offload", action="store_true")
     p.add_argument("--tensor-parallel-size", type=int, default=8)
@@ -245,19 +244,16 @@ def main() -> None:
     )
     if a.batch_size < 1:
         raise SystemExit("--batch-size must be at least 1")
-    columns = [name.strip() for name in a.prompt_columns.split(",") if name.strip()]
     pending = []
     for offset, row in enumerate(rows, start=a.start):
-        sample_id = int(row["id"]) if row.get("id", "").isdigit() else offset
-        mp4 = out / f"sample_{sample_id:04d}.mp4"
-        wav = out / f"sample_{sample_id:04d}.wav"
+        mp4 = out / f"sample_{offset:04d}.mp4"
+        wav = out / f"sample_{offset:04d}.wav"
         if sample_done(mp4, wav):
             print(f"[{offset}] exists, skip: {mp4} {wav}", flush=True)
             continue
-        parts = [row.get(name, "").strip() for name in columns if row.get(name, "").strip()]
-        prompt = "\n".join(parts) or row.get("prompt") or row.get("caption")
+        prompt = (row.get("text") or "").strip()
         if prompt:
-            pending.append((offset, sample_id, mp4, wav, prompt))
+            pending.append((offset, mp4, wav, prompt))
         else:
             print(f"[{offset}] missing text, skip", flush=True)
 
@@ -269,10 +265,10 @@ def main() -> None:
             num_inference_steps=a.num_inference_steps,
             guidance_scale=a.guidance_scale,
             frame_rate=float(a.frame_rate or a.fps),
-            generator=torch.Generator(device="npu").manual_seed(a.seed + batch[0][1]),
+            generator=torch.Generator(device="npu").manual_seed(a.seed + batch[0][0]),
             extra_args=json.loads(a.extra_body),
         )
-        requests = [{"prompt": item[4], "negative_prompt": a.negative_prompt} for item in batch]
+        requests = [{"prompt": item[3], "negative_prompt": a.negative_prompt} for item in batch]
         result = omni.generate(requests, params)
         outputs = result if isinstance(result, list) else [result]
         if len(outputs) != len(batch):
@@ -286,9 +282,9 @@ def main() -> None:
             frames_u8 = fit_frames(to_uint8_hwc(frames), out_h, out_w)
             audio_cn = to_audio_cn(audio)
             audio_cn, audio_sample_rate = resample_audio(audio_cn, int(audio_sample_rate), int(a.audio_sample_rate))
-            save_wav(audio_cn, item[3], audio_sample_rate)
-            save_video(frames_u8, item[2], a.fps, audio_cn, audio_sample_rate)
-            print(f"[{item[0]}] saved {item[2]} {item[3]} ({out_h}x{out_w})", flush=True)
+            save_wav(audio_cn, item[2], audio_sample_rate)
+            save_video(frames_u8, item[1], a.fps, audio_cn, audio_sample_rate)
+            print(f"[{item[0]}] saved {item[1]} {item[2]} ({out_h}x{out_w})", flush=True)
 
 
 if __name__ == "__main__":

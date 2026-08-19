@@ -84,10 +84,4 @@ bash run_npu_8card.sh
 这会一次提交 4 个 Prompt，并分别写入 4 对 MP4/WAV。批大小越大，吞吐量通常越高，
 但 NPU 内存占用也越大；建议从 `2` 或 `4` 开始测试。
 
-默认使用 CSV 的 `text` 列作为 Prompt。如果需要把多个 CSV 字段合并成每个样本的
-一个 Prompt，可以使用：
-
-```bash
-export EXTRA_ARGS="--prompt-columns video_text,audio_text"
-bash run_npu_8card.sh
-```
+Prompt 固定使用官方 CSV 的 `text` 列，文件按 CSV 行号命名为 `sample_0000.mp4` / `sample_0000.wav`。
