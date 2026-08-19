@@ -47,7 +47,7 @@ def args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def save_video(frames, path: Path, fps: int) -> None:
+def save_video(frames, path: Path, fps: int, audio=None, audio_sample_rate: int = 24000) -> None:
     from diffusers.utils import export_to_video
 
     if isinstance(frames, torch.Tensor):
@@ -67,7 +67,25 @@ def save_video(frames, path: Path, fps: int) -> None:
     fd, tmp = tempfile.mkstemp(prefix=path.stem + ".", suffix=".mp4", dir=path.parent)
     os.close(fd)
     try:
-        export_to_video(list(x) if isinstance(x, np.ndarray) else x, tmp, fps=fps)
+        video_frames = list(x) if isinstance(x, np.ndarray) else x
+        if audio is None:
+            export_to_video(video_frames, tmp, fps=fps)
+        else:
+            from vllm_omni.diffusion.utils.media_utils import mux_video_audio_bytes
+
+            video_array = np.asarray(video_frames)
+            if np.issubdtype(video_array.dtype, np.integer):
+                frames_u8 = video_array.astype(np.uint8)
+            else:
+                frames_u8 = (np.clip(video_array, 0, 1) * 255).round().astype(np.uint8)
+            if isinstance(audio, torch.Tensor):
+                audio = audio.detach().cpu().float().numpy()
+            audio_array = np.squeeze(np.asarray(audio)).astype(np.float32)
+            video_bytes = mux_video_audio_bytes(
+                frames_u8, audio_array, fps=float(fps), audio_sample_rate=audio_sample_rate
+            )
+            with open(tmp, "wb") as f:
+                f.write(video_bytes)
         os.replace(tmp, path)
     finally:
         if os.path.exists(tmp):
@@ -75,20 +93,30 @@ def save_video(frames, path: Path, fps: int) -> None:
 
 
 def unwrap(result):
+    audio = None
+    audio_sample_rate = 24000
     if isinstance(result, list):
         result = result[0] if result else None
+    multimodal = getattr(result, "multimodal_output", None) or {}
+    audio = multimodal.get("audio")
+    audio_sample_rate = multimodal.get("audio_sample_rate", audio_sample_rate)
     if hasattr(result, "request_output") and result.request_output is not None:
         result = result.request_output
+        multimodal = getattr(result, "multimodal_output", None) or {}
+        audio = multimodal.get("audio", audio)
+        audio_sample_rate = multimodal.get("audio_sample_rate", audio_sample_rate)
     if hasattr(result, "images"):
         images = result.images
         if not images:
             return None
         result = images[0]
     if isinstance(result, dict):
-        return result.get("frames") or result.get("video")
+        audio = result.get("audio", audio)
+        audio_sample_rate = result.get("audio_sample_rate", audio_sample_rate)
+        result = result.get("frames") or result.get("video")
     if isinstance(result, tuple):
-        return result[0]
-    return result
+        result, audio = result
+    return result, audio, audio_sample_rate
 
 
 def main() -> None:
@@ -133,10 +161,10 @@ def main() -> None:
             generator=torch.Generator(device="npu").manual_seed(a.seed + sample_id),
         )
         result = omni.generate({"prompt": prompt, "negative_prompt": a.negative_prompt}, params)
-        frames = unwrap(result)
+        frames, audio, audio_sample_rate = unwrap(result)
         if frames is None:
             raise RuntimeError(f"No frames returned for row {offset}")
-        save_video(frames, target, a.fps)
+        save_video(frames, target, a.fps, audio, audio_sample_rate)
         print(f"[{offset}] saved {target}", flush=True)
 
 

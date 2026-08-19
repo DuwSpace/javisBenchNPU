@@ -32,5 +32,5 @@ OUTPUT_DIR/sample_0001.mp4
 ```
 
 The script uses the CSV `text` column (falling back to `prompt` or `caption`).
-For audio-video checkpoints, the vLLM-Omni result can be extended in
-`save_video` with the repository's `mux_video_audio_bytes` helper.
+When the checkpoint returns audio through vLLM-Omni's multimodal output, it is
+automatically muxed into the MP4 file.
