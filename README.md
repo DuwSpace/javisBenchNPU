@@ -41,3 +41,7 @@ OUTPUT_DIR/sample_0001.mp4
 The script uses the CSV `text` column (falling back to `prompt` or `caption`).
 When the checkpoint returns audio through vLLM-Omni's multimodal output, it is
 automatically muxed into the MP4 file.
+
+To combine several CSV prompt fields into one video result, use
+`--prompt-columns video_text,audio_text`. This still produces one MP4 per CSV
+row; the fields are joined into one text condition.

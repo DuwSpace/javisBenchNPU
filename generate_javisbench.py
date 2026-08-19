@@ -45,6 +45,7 @@ def args() -> argparse.Namespace:
     p.add_argument("--guidance-scale", type=float, default=5.0)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--negative-prompt", default="")
+    p.add_argument("--prompt-columns", default="text", help="CSV columns to combine into one prompt/output")
     p.add_argument("--extra-body", default="{}", help="JSON object of model-specific sampling parameters")
     p.add_argument("--enable-cpu-offload", action="store_true")
     p.add_argument("--tensor-parallel-size", type=int, default=8)
@@ -168,7 +169,9 @@ def main() -> None:
         if target.exists() and target.stat().st_size > 0:
             print(f"[{offset}] exists, skip: {target}", flush=True)
             continue
-        prompt = row.get("text") or row.get("prompt") or row.get("caption")
+        columns = [name.strip() for name in a.prompt_columns.split(",") if name.strip()]
+        parts = [row.get(name, "").strip() for name in columns if row.get(name, "").strip()]
+        prompt = "\n".join(parts) or row.get("prompt") or row.get("caption")
         if not prompt:
             print(f"[{offset}] missing text, skip", flush=True)
             continue
