@@ -26,7 +26,7 @@ def args() -> argparse.Namespace:
     p.add_argument("--input-file", required=True, help="JavisBench CSV containing a text column")
     p.add_argument("--output-dir", required=True)
     p.add_argument("--model", required=True)
-    p.add_argument("--model-class-name", default=None)
+    p.add_argument("--model-class-name", default="LTX2Pipeline")
     p.add_argument("--limit", type=int, default=None, help="Generate at most this many rows")
     p.add_argument("--start", type=int, default=0, help="CSV row offset (zero based)")
     p.add_argument("--height", type=int, default=512)

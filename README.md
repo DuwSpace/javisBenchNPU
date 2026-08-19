@@ -19,6 +19,9 @@ export EXTRA_ARGS="--height 512 --width 768 --num-frames 121 --num-inference-ste
 bash run_npu_8card.sh
 ```
 
+For the LTX-2/LTX-2.3 checkpoint in the NPU environment, the registered class
+name is `LTX2Pipeline`; LTX-2.3 is selected from checkpoint metadata.
+
 `ASCEND_RT_VISIBLE_DEVICES` defaults to `0,1,2,3,4,5,6,7`. Override it when
 using a different eight-device allocation. `TENSOR_PARALLEL_SIZE` defaults to
 8. To resume a selected range, set `EXTRA_ARGS="--start 400"`; existing
