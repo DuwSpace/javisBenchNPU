@@ -234,6 +234,7 @@ def main() -> None:
         enforce_eager=a.enforce_eager,
         vae_use_tiling=a.vae_use_tiling,
         enable_cpu_offload=a.enable_cpu_offload,
+        max_num_seqs=a.batch_size,
         parallel_config=DiffusionParallelConfig(
             tensor_parallel_size=a.tensor_parallel_size,
             ulysses_degree=a.ulysses_degree,
@@ -259,7 +260,11 @@ def main() -> None:
 
     for batch_start in range(0, len(pending), a.batch_size):
         batch = pending[batch_start : batch_start + a.batch_size]
-        print(f"generating batch rows {batch[0][0]}-{batch[-1][0]} ({len(batch)} prompts)", flush=True)
+        print(
+            f"generating batch rows {batch[0][0]}-{batch[-1][0]} "
+            f"({len(batch)} prompts, max_num_seqs={a.batch_size})",
+            flush=True,
+        )
         params = OmniDiffusionSamplingParams(
             height=a.height, width=a.width, num_frames=a.num_frames,
             num_inference_steps=a.num_inference_steps,

@@ -90,7 +90,9 @@ export EXTRA_ARGS="--batch-size 4 --num-inference-steps 30"
 bash run_npu_8card.sh
 ```
 
-这会一次提交 4 个 Prompt，并分别写入 4 对 MP4/WAV。批大小越大，吞吐量通常越高，
-但 NPU 内存占用也越大；建议从 `2` 或 `4` 开始测试。
+这会一次提交 4 个独立请求，并把引擎的 `max_num_seqs` 设为 4，让调度器把它们合成一次 LTX forward。
+只加大 `--batch-size`、不改 `max_num_seqs` 时，vLLM-Omni 默认仍是一条一条推理。
+批越大显存越高，建议从 `2` 或 `4` 试。
+`enable-cpu-offload` 仍然需要，否则 vocoder 会在 NPU 上初始化失败。
 
 Prompt 固定使用官方 CSV 的 `text` 列，文件按 CSV 行号命名为 `sample_0000.mp4` / `sample_0000.wav`。
