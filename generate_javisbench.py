@@ -34,6 +34,7 @@ def args() -> argparse.Namespace:
     p.add_argument("--model", required=True)
     p.add_argument("--model-class-name", default="LTX2Pipeline")
     p.add_argument("--limit", type=int, default=None, help="Generate at most this many rows")
+    p.add_argument("--batch-size", type=int, default=1, help="Number of prompts submitted per generation call")
     p.add_argument("--start", type=int, default=0, help="CSV row offset (zero based)")
     p.add_argument("--height", type=int, default=512)
     p.add_argument("--width", type=int, default=768)
@@ -106,8 +107,6 @@ def save_video(frames, path: Path, fps: int, audio=None, audio_sample_rate: int 
 def unwrap(result):
     audio = None
     audio_sample_rate = 24000
-    if isinstance(result, list):
-        result = result[0] if result else None
     multimodal = getattr(result, "multimodal_output", None) or {}
     audio = multimodal.get("audio")
     audio_sample_rate = multimodal.get("audio_sample_rate", audio_sample_rate)
@@ -161,35 +160,45 @@ def main() -> None:
             pipeline_parallel_size=a.pipeline_parallel_size,
         ),
     )
+    if a.batch_size < 1:
+        raise SystemExit("--batch-size must be at least 1")
+    columns = [name.strip() for name in a.prompt_columns.split(",") if name.strip()]
+    pending = []
     for offset, row in enumerate(rows, start=a.start):
-        sample_id = offset
-        if row.get("id", "").isdigit():
-            sample_id = int(row["id"])
+        sample_id = int(row["id"]) if row.get("id", "").isdigit() else offset
         target = out / f"sample_{sample_id:04d}.mp4"
         if target.exists() and target.stat().st_size > 0:
             print(f"[{offset}] exists, skip: {target}", flush=True)
             continue
-        columns = [name.strip() for name in a.prompt_columns.split(",") if name.strip()]
         parts = [row.get(name, "").strip() for name in columns if row.get(name, "").strip()]
         prompt = "\n".join(parts) or row.get("prompt") or row.get("caption")
-        if not prompt:
+        if prompt:
+            pending.append((offset, sample_id, target, prompt))
+        else:
             print(f"[{offset}] missing text, skip", flush=True)
-            continue
-        print(f"[{offset}/{a.start + len(rows) - 1}] generating {target.name}", flush=True)
+
+    for batch_start in range(0, len(pending), a.batch_size):
+        batch = pending[batch_start : batch_start + a.batch_size]
+        print(f"generating batch rows {batch[0][0]}-{batch[-1][0]} ({len(batch)} prompts)", flush=True)
         params = OmniDiffusionSamplingParams(
             height=a.height, width=a.width, num_frames=a.num_frames,
             num_inference_steps=a.num_inference_steps,
             guidance_scale=a.guidance_scale,
             frame_rate=float(a.frame_rate or a.fps),
-            generator=torch.Generator(device="npu").manual_seed(a.seed + sample_id),
+            generator=torch.Generator(device="npu").manual_seed(a.seed + batch[0][1]),
             extra_args=json.loads(a.extra_body),
         )
-        result = omni.generate({"prompt": prompt, "negative_prompt": a.negative_prompt}, params)
-        frames, audio, audio_sample_rate = unwrap(result)
-        if frames is None:
-            raise RuntimeError(f"No frames returned for row {offset}")
-        save_video(frames, target, a.fps, audio, audio_sample_rate)
-        print(f"[{offset}] saved {target}", flush=True)
+        requests = [{"prompt": item[3], "negative_prompt": a.negative_prompt} for item in batch]
+        result = omni.generate(requests, params)
+        outputs = result if isinstance(result, list) else [result]
+        if len(outputs) != len(batch):
+            raise RuntimeError(f"Batch returned {len(outputs)} outputs for {len(batch)} prompts")
+        for item, output in zip(batch, outputs):
+            frames, audio, audio_sample_rate = unwrap(output)
+            if frames is None:
+                raise RuntimeError(f"No frames returned for row {item[0]}")
+            save_video(frames, item[2], a.fps, audio, audio_sample_rate)
+            print(f"[{item[0]}] saved {item[2]}", flush=True)
 
 
 if __name__ == "__main__":

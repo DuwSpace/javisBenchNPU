@@ -42,6 +42,10 @@ The script uses the CSV `text` column (falling back to `prompt` or `caption`).
 When the checkpoint returns audio through vLLM-Omni's multimodal output, it is
 automatically muxed into the MP4 file.
 
+To submit several Prompts in one offline generation call, use `--batch-size`.
+For example, `--batch-size 4` submits four prompts together and writes four
+corresponding MP4 files. The batch size trades throughput for NPU memory.
+
 To combine several CSV prompt fields into one video result, use
 `--prompt-columns video_text,audio_text`. This still produces one MP4 per CSV
 row; the fields are joined into one text condition.
